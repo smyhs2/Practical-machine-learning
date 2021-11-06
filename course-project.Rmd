@@ -1,0 +1,119 @@
+---
+title: "Course project"
+author: "Hanyu Su"
+date: "2021/11/2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+## Loaad the data and packages
+
+```{r cars}
+library(caret)
+
+if(!file.exists("pml-training.csv"))
+  {download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "pml-training.csv")}
+
+if(!file.exists("pml-testing.csv"))
+{download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "pml-testing.csv")}
+
+trainingDataSet<- read.table("pml-training.csv", sep=",", header=TRUE, na.strings = c("NA","",'#DIV/0!'))
+testingDataSet<- read.table("pml-testing.csv", sep=",", header=TRUE, na.strings = c("NA","",'#DIV/0!'))
+dim(trainingDataSet)
+dim(testingDataSet)
+```
+
+We replaced missing values with NA;There are 19622 rows in training set and 20 rows in testing set.
+
+## Clean the data
+
+
+```{r }
+trainingDataSet <- trainingDataSet[,(colSums(is.na(trainingDataSet)) == 0)]
+dim(trainingDataSet)
+testingDataSet <- testingDataSet[,(colSums(is.na(testingDataSet)) == 0)]
+dim(testingDataSet)
+```
+
+We reduced the data to 60 colums because the other 100 colums have misssing values.
+
+## Preprocess the data
+
+```{r}
+numericalsIdx <- which(lapply(trainingDataSet, class) %in% "numeric")
+
+preprocessModel <-preProcess(trainingDataSet[,numericalsIdx],method=c('knnImpute', 'center', 'scale'))
+pre_trainingDataSet <- predict(preprocessModel, trainingDataSet[,numericalsIdx])
+pre_trainingDataSet$classe <- trainingDataSet$classe
+
+pre_testingDataSet <-predict(preprocessModel,testingDataSet[,numericalsIdx])
+```
+
+## Remove the non-zero variables
+
+```{r}
+nzv <- nearZeroVar(pre_trainingDataSet,saveMetrics=TRUE)
+pre_trainingDataSet <- pre_trainingDataSet[,nzv$nzv==FALSE]
+
+nzv <- nearZeroVar(pre_testingDataSet,saveMetrics=TRUE)
+pre_testingDataSet <- pre_testingDataSet[,nzv$nzv==FALSE]
+```
+
+## Validate
+
+We use a 75% observation training dataset to train our model. 
+```{r}
+set.seed(1)
+idxTrain<- createDataPartition(pre_trainingDataSet$classe, p=3/4, list=FALSE)
+training<- pre_trainingDataSet[idxTrain, ]
+validation <- pre_trainingDataSet[-idxTrain, ]
+dim(training) ; dim(validation)
+```
+
+## Model and cross-validation
+
+```{r}
+library(randomForest)
+modFitrf <- train(classe ~., method="rf", data=training, trControl=trainControl(method='cv'), number=5, allowParallel=TRUE, importance=TRUE )
+modFitrf
+```
+
+## Cross Validation Testing and Out-of-Sample Error Estimate
+Now we apply our model to the testing.
+
+```{r}
+predValidRF <- predict(modFitrf, validation)
+confus <- confusionMatrix(validation$classe, predValidRF)
+confus$table
+```
+
+And we can see that the model is quite accurate.
+
+```{r}
+accur <- postResample(validation$classe, predValidRF)
+modAccuracy <- accur[[1]]
+modAccuracy
+```
+
+```{r}
+out_of_sample_error <- 1 - modAccuracy
+out_of_sample_error
+```
+
+The estimated accuracy of the model is 99.7% and the estimated out-of-sample error based on our fitted model applied to the cross validation dataset is 0.3%.
+
+## Apply the model to the 20 test rows
+
+```{r}
+pred_final <- predict(modFitrf, pre_testingDataSet)
+pred_final
+```
+
+Here are our results
